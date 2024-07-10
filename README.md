@@ -1,6 +1,6 @@
 # 🧘‍♂️ ZenBot
 
-This is a simple local app that can be used to generate guided meditations on any theme and of any length.
+This is a simple local app that uses OpenAI's API to generate guided audio meditations on any theme and of any length.
 
 ## Installation
 
