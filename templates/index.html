@@ -72,29 +72,41 @@
     </style>
 </head>
 <body>
-    <h1>🧘 ZenBot</h1>
+        <h1>🧘 ZenBot</h1>
+
     <form id="meditationForm">
         <label for="prompt">Meditation topic:</label>
         <input type="text" id="prompt" name="prompt" required>
+
         <label for="duration">Duration (minutes):</label>
-        <input type="number" id="duration" name="duration" min="1" max="60" required>
-        <input type="submit" value="Generate Meditation">
+        <input type="number" id="duration" name="duration" required>
+
+        <button type="submit">Generate Meditation</button>
     </form>
 
-    <div class="control-panel">
-        <button id="pauseResumeBtn">Pause</button>
+    <div id="control-panel">
+        <button id="pauseButton">Pause</button>
+        <button id="stopButton">Stop</button>
     </div>
 
-    <div id="loading">
-        <p>Creating your zen experience... <span id="progress">0</span>% (<span id="completed">0</span>/<span id="total">0</span> parts)</p>
+    <div id="loading" style="display: none;">
+        Creating your zen experience... <span id="progress">0</span>%
+        (<span id="completed">0</span>/<span id="total">0</span> parts)
     </div>
 
-    <div id="scriptContainer">
+    <div id="scriptContainer" style="display: none;">
         <h2>Your Personalized Meditation Script:</h2>
         <pre id="script"></pre>
     </div>
 
     <script>
+
+            document.getElementById('stopButton').addEventListener('click', function() {
+            fetch('/stop')
+                .then(response => response.json())
+                .then(data => console.log(data.status));
+        });
+
         $(document).ready(function() {
             let isPaused = false;
 

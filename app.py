@@ -27,8 +27,9 @@ client = OpenAI(api_key=api_key)
 total_parts = 0
 completed_parts = 0
 is_paused = False
+is_stopped = False
 pause_event = threading.Event()
-
+audio_thread = None
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -66,15 +67,25 @@ def pause_playback():
     global is_paused
     is_paused = True
     pause_event.set()
+    pygame.mixer.music.pause()
     return jsonify({'status': 'paused'})
-
 
 @app.route('/resume')
 def resume_playback():
     global is_paused
     is_paused = False
     pause_event.clear()
+    pygame.mixer.music.unpause()
     return jsonify({'status': 'resumed'})
+
+@app.route('/stop')
+def stop_playback():
+    global is_stopped, audio_thread
+    is_stopped = True
+    if audio_thread:
+        audio_thread.join()  # Wait for the audio thread to finish
+    pygame.mixer.music.stop()
+    return jsonify({'status': 'stopped'})
 
 
 def cleanup_old_files():
@@ -91,10 +102,14 @@ def generate_meditation_script(prompt, duration):
              "content": f"""Create a {duration}-minute guided meditation on {prompt}. 
              Include [PAUSE X] indicators for moments of silence, where X is the duration of the pause in minutes.
              There should be plenty of long pauses between guidance. Do not guide too much, use instructions sparingly. Have about 4 instructions for each meditation OR LESS, with only pauses between. ONLY 4 instructions per meditation.
+             The pauses should add up to the total duration.
              The style of meditation should be inspired by the teachings of Thich Nhat Hanh and Joseph Goldstein, but do not mention this. Can also take inspiration from Vipassana techniques.
              The aim is not NOT 'relaxation' or 'stress-reduction', but to cultivate mindfulness and awareness - to be present with whatever arises in the moment, in all its detail and subtlety. No visualisations or imaginations.
              The meditation should be aimed at intermediate to advanced practitioners.
+             Do not add numbers, or titles, so that the guided meditation flows nicely when said out loud.
+             Make sure to actually start the meditation before pausing too soon. Give instructions straight away for the meditation rather than just welcoming.
              Be precise and concise in your guidance.
+             Be a little bit surprising in your guidance, with some novel ideas or ways of phrasing things. Keep it fresh and interesting. Have some surprising and precise insights about how to meditate.
              """}
         ]
     )
@@ -102,9 +117,11 @@ def generate_meditation_script(prompt, duration):
 
 
 def generate_and_play_audio(script):
-    global total_parts, completed_parts
+    global audio_thread, is_stopped
+    is_stopped = False
     audio_files = generate_audio_files(script)
-    play_audio(audio_files, script)
+    audio_thread = threading.Thread(target=play_audio, args=(audio_files, script))
+    audio_thread.start()
 
 
 def generate_audio_files(script):
@@ -131,31 +148,50 @@ def generate_audio_files(script):
     return audio_files
 
 
+def play_meditation_bell():
+    pygame.mixer.music.load("meditation_bell.mp3")
+    pygame.mixer.music.play()
+    while pygame.mixer.music.get_busy() and not is_stopped:
+        time.sleep(0.1)
+
 def play_audio(audio_files, script):
-    global is_paused
+    global is_paused, is_stopped, completed_parts
     pygame.mixer.init()
     pause_durations = [float(x) for x in re.findall(r'\[PAUSE (\d+(?:\.\d+)?)\]', script)]
 
+    play_meditation_bell()
+    if is_stopped:
+        return
+
     for i, audio_file in enumerate(audio_files):
+        if is_stopped:
+            break
         pygame.mixer.music.load(audio_file)
         pygame.mixer.music.play()
 
-        # Wait for the audio to finish playing or for pause
         while pygame.mixer.music.get_busy() or is_paused:
+            if is_stopped:
+                return
             if is_paused:
                 pygame.mixer.music.pause()
-                pause_event.wait()  # Wait for resume signal
+                pause_event.wait()
                 pygame.mixer.music.unpause()
             time.sleep(0.1)
 
-        # Add the specified pause after each part (except the last one)
-        if i < len(pause_durations):
+        completed_parts += 1
+
+        if i < len(pause_durations) and not is_stopped:
             pause_start = time.time()
-            pause_duration = pause_durations[i] * 60  # Convert minutes to seconds
+            pause_duration = pause_durations[i] * 60
             while time.time() - pause_start < pause_duration:
+                if is_stopped:
+                    return
                 if is_paused:
-                    pause_event.wait()  # Wait for resume signal
+                    pause_event.wait()
                 time.sleep(0.1)
+
+    if not is_stopped:
+        play_meditation_bell()
 
     # Clean up audio files
     for audio_file in audio_files:
